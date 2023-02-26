@@ -1,0 +1,17 @@
+[package]
+name = "magic-sql-gen"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+xml-rs = "0.8.4"
+yew = { version="0.20", features=["csr"] }
+anyhow = "1.0.69"
+thiserror = "1.0.38"
+lazy-regex = "2.4.1"
+
+[dependencies.zip]
+version = "0.6.4"
+default-features = false
+features=["deflate"]
