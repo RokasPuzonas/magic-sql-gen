@@ -1,12 +1,10 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 mod utils;
 mod uml_model_parser;
 mod ddl_parser;
 mod sql_types_parser;
+use serde::{Serialize, Deserialize};
 
-use std::{io::{Read, Seek}, collections::HashSet};
+use std::{io::{Read, Seek}, collections::HashSet, fmt::Display};
 use anyhow::{Result, Context};
 use lazy_regex::regex_captures;
 use zip::ZipArchive;
@@ -15,7 +13,7 @@ use crate::unwrap_opt_continue;
 
 use self::{uml_model_parser::{parse_uml_model, UMLModel, UMLClass, UMLModifier, UMLNullableModifier, UMLPrimaryKeyModifier, UMLTypeModifier, UMLForeignKeyModifier}, ddl_parser::parse_ddl_scripts, sql_types_parser::{parse_sql_types, SQLTypeName}};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum SQLType {
 	Int,
 	Decimal,
@@ -26,31 +24,45 @@ pub enum SQLType {
 	Varchar(u16),
 }
 
-#[derive(Debug)]
+impl Display for SQLType {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+				SQLType::Int           => write!(f, "INT"),
+				SQLType::Decimal       => write!(f, "DECIMAL"),
+				SQLType::Date          => write!(f, "DATE"),
+				SQLType::Float         => write!(f, "FLOAT"),
+				SQLType::Bool          => write!(f, "BOOL"),
+				SQLType::Char(size)    => write!(f, "CHAR({})", size),
+				SQLType::Varchar(size) => write!(f, "VARCHAR({})", size),
+		}
+	}
+}
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum SQLCheckConstraint {
 	OneOf(Vec<String>),
 	Freeform(String)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct SQLColumn {
-	name: String,
-	sql_type: SQLType,
-	primary_key: bool,
-	nullable: bool,
-	foreign_key: Option<(String, String)>,
-	check_constraint: Option<SQLCheckConstraint>
+	pub name: String,
+	pub sql_type: SQLType,
+	pub primary_key: bool,
+	pub nullable: bool,
+	pub foreign_key: Option<(String, String)>,
+	pub check_constraint: Option<SQLCheckConstraint>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct SQLTable {
-	name: String,
-	columns: Vec<SQLColumn>,
+	pub name: String,
+	pub columns: Vec<SQLColumn>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct SQLTableCollection {
-	tables: Vec<SQLTable>
+	pub tables: Vec<SQLTable>
 }
 
 fn find_class_by_id<'a>(models: &'a [UMLModel], id: &str) -> Option<&'a UMLClass> {

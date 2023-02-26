@@ -1,0 +1,16 @@
+{
+  "name": "magic-sql-gen",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "preinstall": "npx only-allow pnpm",
+    "uno": "unocss src/*.rs src/components/*.rs index.html --out-file static/uno.css"
+  },
+  "devDependencies": {
+    "@unocss/cli": "^0.50.1",
+    "@unocss/preset-attributify": "^0.50.1",
+    "@unocss/preset-icons": "^0.50.1",
+    "unocss": "^0.50.1"
+  }
+}

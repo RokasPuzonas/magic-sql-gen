@@ -10,8 +10,24 @@ yew = { version="0.20", features=["csr"] }
 anyhow = "1.0.69"
 thiserror = "1.0.38"
 lazy-regex = "2.4.1"
+js-sys = "0.3"
+base64 = "0.13.0"
+gloo = "0.8"
+serde = { version = "1.0", features = ["derive"] }
 
 [dependencies.zip]
 version = "0.6.4"
 default-features = false
 features=["deflate"]
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["File", "DragEvent", "DataTransfer"]
+
+# More info: https://doc.rust-lang.org/cargo/reference/profiles.html
+[profile.release]
+panic = 'abort'
+codegen-units = 1
+lto = true
+# Experiment with levels: '1', '2', '3', 's', 'z' for best results
+opt-level = 'z' # or 's', for less aggresive size optimization
