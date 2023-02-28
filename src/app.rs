@@ -1,12 +1,11 @@
 use std::io::Cursor;
-use std::collections::HashMap;
+use std::collections::{HashMap, self};
 use std::rc::Rc;
 use gloo::console::console_dbg;
-use base64::encode;
 use gloo::file::callbacks::FileReader;
 use gloo::file::File;
 use gloo::storage::{LocalStorage, Storage};
-use web_sys::{DragEvent, Event, FileList, HtmlInputElement};
+use web_sys::{DragEvent, Event, FileList, HtmlInputElement, MouseEvent};
 use yew::html::TargetCast;
 use yew::{html, Callback, Component, Context, Html};
 
@@ -19,11 +18,15 @@ pub enum Msg {
 	Noop,
 	Loaded(String, Vec<u8>),
 	UploadProject(File),
+	UpdateCurrentProject(Option<SQLTableCollection>),
+	ShowNextTable,
+	ShowPrevTable
 }
 
 pub struct App {
 	active_readers: HashMap<String, FileReader>,
-	current_collection: Option<Vec<Rc<SQLTable>>>
+	current_collection: Option<Vec<Rc<SQLTable>>>,
+	currently_shown_table: usize
 }
 
 impl Component for App {
@@ -38,7 +41,8 @@ impl Component for App {
 
 		Self {
 			active_readers: HashMap::default(),
-			current_collection
+			current_collection,
+			currently_shown_table: 0
 		}
 	}
 
@@ -50,7 +54,8 @@ impl Component for App {
 
 					let mut collections = parse_project(cursor).expect("oops");
 					if collections.len() >= 1 {
-						self.set_current_collection(Some(collections.remove(0)));
+						let msg = Self::update_current_collection(Some(collections.remove(0)));
+						ctx.link().send_message(msg);
 					}
 				}
 
@@ -75,7 +80,32 @@ impl Component for App {
 				self.active_readers.insert(file_name, task);
 				true
 			},
-			Msg::Noop => false
+			Msg::Noop => false,
+			Msg::UpdateCurrentProject(collection) => {
+				if let Some(collection) = collection {
+					LocalStorage::set(COLLECTION_STORE_KEY, &collection).unwrap();
+					self.current_collection = Some(collection.tables.into_iter().map(Rc::new).collect());
+				} else {
+					LocalStorage::delete(COLLECTION_STORE_KEY);
+					self.current_collection = None
+				}
+
+				true
+			},
+			Msg::ShowNextTable => {
+				if let Some(collection) = &self.current_collection {
+					self.currently_shown_table = (self.currently_shown_table + 1).min(collection.len()-1);
+					return true;
+				}
+				false
+			},
+			Msg::ShowPrevTable => {
+				if self.currently_shown_table > 0 {
+					self.currently_shown_table = self.currently_shown_table - 1;
+					return true;
+				}
+				false
+			},
 		}
 	}
 
@@ -124,13 +154,26 @@ impl Component for App {
 				if let Some(collection) = &self.current_collection {
 					<div>
 						<p class="text-2xl mt-2rem">{ "2. Make sure everything looks 👌" }</p>
-							// { Self::show_collection(collection) }
-						{ Self::show_table(collection[0].clone()) }
-						<div class="mt-0.5rem gap-3 flex flex-row items-center">
-							<button class="p-0.5rem btn-white">{ "< Previous" }</button>
-							<div> { 0 } { " / " } { collection.len() } </div>
-							<button class="p-0.5rem btn-white">{ "Next >" }</button>
+						<div class="mb-0.5rem gap-3 flex flex-row items-center">
+							<button
+								class="p-0.5rem btn-white"
+								onclick={ctx.link().callback(move |_: MouseEvent| {
+									Msg::ShowPrevTable
+								})}
+							>
+								{ "< Previous" }
+							</button>
+							<div> { self.currently_shown_table + 1 } { " / " } { collection.len() } </div>
+							<button
+								class="p-0.5rem btn-white"
+								onclick={ctx.link().callback(move |_: MouseEvent| {
+									Msg::ShowNextTable
+								})}
+							>
+								{ "Next >" }
+							</button>
 						</div>
+						{ Self::show_table(collection[self.currently_shown_table].clone()) }
 						<button class="display-block p-1rem  mt-1rem btn-emerald">{ "All good?" }</button>
 					</div>
 					<div>
@@ -143,15 +186,6 @@ impl Component for App {
 }
 
 impl App {
-	fn show_collection(collection: &SQLTableCollection) -> Html {
-		collection.tables.iter().map(|table| {
-			html! {
-				<div>
-					{ &table.name }
-				</div>
-			}
-		}).collect()
-	}
 
 	fn show_table(table: Rc<SQLTable>) -> Html {
 		html!{
@@ -174,13 +208,7 @@ impl App {
 		}
 	}
 
-	pub fn set_current_collection(&mut self, current_collection: Option<SQLTableCollection>) {
-		if let Some(collection) = current_collection {
-			LocalStorage::set(COLLECTION_STORE_KEY, &collection).unwrap();
-			self.current_collection = Some(collection.tables.into_iter().map(Rc::new).collect());
-		} else {
-			LocalStorage::delete(COLLECTION_STORE_KEY);
-			self.current_collection = None
-		}
+	pub fn update_current_collection(current_collection: Option<SQLTableCollection>) -> Msg {
+		Msg::UpdateCurrentProject(current_collection)
 	}
 }
