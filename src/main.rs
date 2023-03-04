@@ -3,6 +3,7 @@ use app::App;
 mod magicdraw_parser;
 mod app;
 mod components;
+mod generate_sql;
 
 // TODO: Make this work with enumation lookup tables
 // TODO: Dark theme switch button

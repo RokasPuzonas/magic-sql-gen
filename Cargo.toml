@@ -14,6 +14,9 @@ js-sys = "0.3"
 base64 = "0.13.0"
 gloo = "0.8"
 serde = { version = "1.0", features = ["derive"] }
+fake = "2.5"
+rand = "0.8"
+chrono = "0.4.23"
 
 [dependencies.zip]
 version = "0.6.4"
