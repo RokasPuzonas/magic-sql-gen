@@ -1,4 +1,8 @@
 
+body {
+	font-family: Arial, Helvetica, sans-serif
+}
+
 .table-column-info td,
 .table-column-info th {
 	padding: 0.5rem;
