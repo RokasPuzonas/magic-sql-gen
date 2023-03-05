@@ -1,9 +1,8 @@
-use gloo::console::{console, console_dbg};
 use gloo::file::callbacks::FileReader;
 use gloo::file::File;
 use gloo::storage::{LocalStorage, Storage};
 use std::cell::RefCell;
-use std::collections::{self, HashMap};
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::rc::Rc;
 use web_sys::{DragEvent, Event, FileList, HtmlInputElement, MouseEvent};

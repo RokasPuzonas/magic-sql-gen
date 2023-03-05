@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use web_sys::{Event, HtmlInputElement};
 use yew::{html, AttrValue, Callback, Html, TargetCast};
@@ -12,9 +12,9 @@ use crate::{
 
 fn show_dropdown_picker(selected: &str, options: &[AttrValue], onchange: Callback<String>) -> Html {
 	html! {
-		<select onchange={Callback::from(move |e: Event| {
+		<select onchange={onchange.reform(move |e: Event| {
 			let value = e.target_unchecked_into::<HtmlInputElement>().value();
-			onchange.emit(value);
+			value
 		})}>
 			{
 				options.iter().map(|value| {
@@ -25,12 +25,12 @@ fn show_dropdown_picker(selected: &str, options: &[AttrValue], onchange: Callbac
 	}
 }
 
-fn show_enum_dropdown<T: PartialEq + Clone + 'static>(
+fn show_enum_dropdown< T: PartialEq + Clone + 'static>(
 	selected: &T,
-	options: HashMap<AttrValue, T>,
+	options: &Vec<(AttrValue, T)>,
 	onchange: Callback<T>,
 ) -> Html {
-	let keys = options.keys().map(AttrValue::clone).collect::<Vec<_>>();
+	let keys = options.iter().map(|(opt, _)| opt.clone()).collect::<Vec<_>>();
 	let guess_str = options
 		.iter()
 		.find(|(_, v)| v.eq(&selected))
@@ -38,10 +38,17 @@ fn show_enum_dropdown<T: PartialEq + Clone + 'static>(
 		.0
 		.clone();
 
+	let options = options.clone();
 	show_dropdown_picker(
 		&guess_str,
 		&keys,
-		onchange.reform(move |value_str: String| options.get(value_str.as_str()).unwrap().clone()),
+		onchange.reform(move |value_str: String| {
+			let enum_value = &options.iter()
+				.find(|(v, _)| v.eq(&value_str))
+				.unwrap()
+				.1;
+			enum_value.clone()
+		})
 	)
 }
 
@@ -131,54 +138,54 @@ pub fn generator_picker(
 			onchange.reform(|(min, max)| SQLValueGuess::Float(min, max)),
 		),
 		SQLValueGuess::Date(guess) => {
-			let options = HashMap::from([
+			let options = vec![
 				("Now".into(), SQLTimeValueGuess::Now),
 				("Future".into(), SQLTimeValueGuess::Future),
 				("Past".into(), SQLTimeValueGuess::Past),
-			]);
+			];
 
 			show_enum_dropdown(
 				guess,
-				options,
+				&options,
 				onchange.reform(|enum_value| SQLValueGuess::Date(enum_value)),
 			)
 		}
 		SQLValueGuess::Time(guess) => {
-			let options = HashMap::from([
+			let options = vec![
 				("Now".into(), SQLTimeValueGuess::Now),
 				("Future".into(), SQLTimeValueGuess::Future),
 				("Past".into(), SQLTimeValueGuess::Past),
-			]);
+			];
 
 			show_enum_dropdown(
 				guess,
-				options,
+				&options,
 				onchange.reform(|enum_value| SQLValueGuess::Time(enum_value)),
 			)
 		}
 		SQLValueGuess::Datetime(guess) => {
-			let options = HashMap::from([
+			let options = vec![
 				("Now".into(), SQLTimeValueGuess::Now),
 				("Future".into(), SQLTimeValueGuess::Future),
 				("Past".into(), SQLTimeValueGuess::Past),
-			]);
+			];
 
 			show_enum_dropdown(
 				guess,
-				options,
+				&options,
 				onchange.reform(|enum_value| SQLValueGuess::Datetime(enum_value)),
 			)
 		}
 		SQLValueGuess::Bool(guess) => {
-			let options = HashMap::from([
+			let options = vec![
 				("Random".into(), SQLBoolValueGuess::Random),
 				("True".into(), SQLBoolValueGuess::True),
 				("False".into(), SQLBoolValueGuess::False),
-			]);
+			];
 
 			show_enum_dropdown(
 				guess,
-				options,
+				&options,
 				onchange.reform(|enum_value| SQLValueGuess::Bool(enum_value)),
 			)
 		}
@@ -189,23 +196,23 @@ pub fn generator_picker(
 				}
 			}
 
-			let options = HashMap::from([
+			let options = vec![
 				("Lorem Ipsum".into(), SQLStringValueGuess::LoremIpsum),
+				("Empty".into(), SQLStringValueGuess::Empty),
 				("First Name".into(), SQLStringValueGuess::FirstName),
 				("Last Name".into(), SQLStringValueGuess::LastName),
 				("Full Name".into(), SQLStringValueGuess::FullName),
-				("Empty".into(), SQLStringValueGuess::Empty),
 				("Phone number".into(), SQLStringValueGuess::PhoneNumber),
 				("City name".into(), SQLStringValueGuess::CityName),
 				("Address".into(), SQLStringValueGuess::Address),
 				("Email".into(), SQLStringValueGuess::Email),
 				("URL".into(), SQLStringValueGuess::URL),
-			]);
+			];
 
 			let max_size = *max_size;
 			show_enum_dropdown(
 				guess,
-				options,
+				&options,
 				onchange.reform(move |enum_value| SQLValueGuess::String(max_size, enum_value)),
 			)
 		}

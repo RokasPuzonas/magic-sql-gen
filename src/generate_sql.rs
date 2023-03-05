@@ -17,7 +17,6 @@ use fake::{
 	},
 	Fake,
 };
-use gloo::console::console_dbg;
 use rand::{rngs::ThreadRng, seq::SliceRandom, Rng};
 
 use crate::magicdraw_parser::{SQLCheckConstraint, SQLColumn, SQLTable, SQLType};
