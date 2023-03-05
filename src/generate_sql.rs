@@ -1,4 +1,4 @@
-use std::{rc::Rc, collections::HashSet};
+use std::{rc::Rc, collections::{HashSet, HashMap}};
 
 use anyhow::{Result, bail};
 use rand::{seq::SliceRandom, Rng, rngs::ThreadRng};
@@ -9,20 +9,20 @@ use crate::magicdraw_parser::{SQLTable, SQLColumn, SQLType, SQLCheckConstraint};
 
 const INDENT: &str = "  ";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SQLIntValueGuess {
 	Range(i32, i32),
 	AutoIncrement
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SQLTimeValueGuess {
 	Now,
 	Future,
 	Past
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SQLStringValueGuess {
 	LoremIpsum,
 	FirstName,
@@ -37,14 +37,14 @@ pub enum SQLStringValueGuess {
 	RandomEnum(Vec<String>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SQLBoolValueGuess {
 	True,
 	False,
 	Random,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SQLValueGuess {
 	Int(SQLIntValueGuess),
 	Date(SQLTimeValueGuess),
@@ -58,7 +58,7 @@ pub enum SQLValueGuess {
 // TODO: Check primary key constraint
 pub fn generate_fake_entries(
 		tables: &[Rc<SQLTable>],
-		value_guessess: &Vec<Vec<SQLValueGuess>>,
+		value_guessess: &Vec<HashMap<&str, SQLValueGuess>>,
 		rows_per_table: u32
 	) -> Result<String> {
 	let mut lines = vec![];
@@ -96,9 +96,9 @@ pub fn generate_fake_entries(
 	for (table_idx, table) in tables.iter().enumerate() {
 		let entries = &mut all_entries[table_idx];
 
-		for (column_idx, column) in table.columns.iter().enumerate() {
+		for column in &table.columns {
 			let mut auto_increment_counter = 0;
-			let value_guess = &value_guessess[table_idx][column_idx];
+			let value_guess = value_guessess[table_idx].get(column.name.as_str()).expect("Failed to get column guess");
 			for entry_idx in 0..(rows_per_table as usize) {
 				if let Some(_) = &column.foreign_key {
 					entries_with_foreign_keys.insert((table_idx, entry_idx));
@@ -358,8 +358,9 @@ pub fn generate_guess(column: &SQLColumn) -> SQLValueGuess {
 	}
 }
 
-pub fn generate_table_guessess(table: &SQLTable) -> Vec<SQLValueGuess> {
+pub fn generate_table_guessess(table: &SQLTable) -> HashMap<String, SQLValueGuess> {
 	table.columns.iter()
-		.map(|column| generate_guess(column))
+		.filter(|column| column.foreign_key.is_none())
+		.map(|column| (column.name.clone(), generate_guess(column)))
 		.collect()
 }

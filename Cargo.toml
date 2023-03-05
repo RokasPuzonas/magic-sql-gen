@@ -16,6 +16,7 @@ gloo = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 fake = "2.5"
 rand = "0.8"
+getrandom = { version = "0.2.8", features = ["js"] }
 chrono = "0.4.23"
 
 [dependencies.zip]

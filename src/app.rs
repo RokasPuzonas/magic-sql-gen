@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::io::Cursor;
 use std::collections::{HashMap, self};
 use std::rc::Rc;
@@ -9,24 +10,32 @@ use web_sys::{DragEvent, Event, FileList, HtmlInputElement, MouseEvent};
 use yew::html::TargetCast;
 use yew::{html, Callback, Component, Context, Html};
 
+use crate::generate_sql::{SQLValueGuess, generate_table_guessess};
 use crate::magicdraw_parser::{parse_project, SQLTableCollection, SQLTable};
 use crate::components::sql_column_info::SQLTableColumnInfo;
 
 const COLLECTION_STORE_KEY: &str = "current_collection";
+const DEFAULT_ROWS_PER_TABLE: u32 = 20;
 
 pub enum Msg {
 	Noop,
 	Loaded(String, Vec<u8>),
 	UploadProject(File),
 	UpdateCurrentProject(Option<SQLTableCollection>),
+	UpdateGenarator(String, SQLValueGuess),
 	ShowNextTable,
-	ShowPrevTable
+	ShowPrevTable,
+	AllGoodConfirmation,
+	GenerateSQL,
 }
 
 pub struct App {
 	active_readers: HashMap<String, FileReader>,
 	current_collection: Option<Vec<Rc<SQLTable>>>,
-	currently_shown_table: usize
+	current_guessess: Vec<Rc<RefCell<HashMap<String, SQLValueGuess>>>>,
+	currently_shown_table: usize,
+	all_good_confirmed: bool,
+	generated_sql: Option<String>
 }
 
 impl Component for App {
@@ -34,15 +43,24 @@ impl Component for App {
 	type Properties = ();
 
 	fn create(_ctx: &Context<Self>) -> Self {
+		let mut current_guessess = vec![];
 		let mut current_collection = None;
 		if let Ok(collection) = LocalStorage::get::<SQLTableCollection>("current_collection") {
+			for table in &collection.tables {
+				let guess = generate_table_guessess(table);
+				current_guessess.push(Rc::new(RefCell::new(guess)));
+			}
+
 			current_collection = Some(collection.tables.into_iter().map(Rc::new).collect());
 		}
 
 		Self {
 			active_readers: HashMap::default(),
 			current_collection,
-			currently_shown_table: 0
+			currently_shown_table: 0,
+			all_good_confirmed: true, // TODO: make this false, by default
+			generated_sql: None,
+			current_guessess
 		}
 	}
 
@@ -84,6 +102,14 @@ impl Component for App {
 			Msg::UpdateCurrentProject(collection) => {
 				if let Some(collection) = collection {
 					LocalStorage::set(COLLECTION_STORE_KEY, &collection).unwrap();
+					self.currently_shown_table = 0;
+					self.all_good_confirmed = false;
+					self.generated_sql = None;
+					self.current_guessess = vec![];
+					for table in &collection.tables {
+						let guess = generate_table_guessess(table);
+						self.current_guessess.push(Rc::new(RefCell::new(guess)));
+					}
 					self.current_collection = Some(collection.tables.into_iter().map(Rc::new).collect());
 				} else {
 					LocalStorage::delete(COLLECTION_STORE_KEY);
@@ -106,79 +132,36 @@ impl Component for App {
 				}
 				false
 			},
+			Msg::AllGoodConfirmation => {
+				self.all_good_confirmed = true;
+				true
+			},
+			Msg::UpdateGenarator(column, generator) => {
+				console_dbg!(column, generator);
+				let mut guessess = self.current_guessess[self.currently_shown_table].borrow_mut();
+				let entry = guessess.get_mut(&column).unwrap();
+				*entry = generator;
+				true
+			},
+			Msg::GenerateSQL => {
+				false
+			},
 		}
 	}
 
 	fn view(&self, ctx: &Context<Self>) -> Html {
-		let prevent_default_cb = Callback::from(|event: DragEvent| {
-			event.prevent_default();
-		});
-
 		html! {
 			<main class="flex-col 4rem center">
 				<p class="text-3xl text-center">{ "🪄 MagicDraw SQL Data Generator" }</p>
-				<div>
-					<p class="text-2xl mt-2rem pb-1rem">
-						<span>{ "1. Upload " }</span>
-						<code class="bg-dark900 p-0.2rem rounded">{".mdzip"}</code>
-						<span>{ " project" }</span>
-					</p>
-					<label for="file-upload">
-						<div
-							class="flex flex-col rounded items-center p-3rem bg-dark800"
-							border="dotted dark100 0.2rem"
-							cursor="pointer"
-							ondrop={ctx.link().callback(|event: DragEvent| {
-								event.prevent_default();
-								let files = event.data_transfer().unwrap().files();
-								Self::upload_project(files)
-							})}
-							ondragover={&prevent_default_cb}
-							ondragenter={&prevent_default_cb}
-						>
-							<div class="i-mdi-file-upload-outline text-4rem"></div>
-						</div>
-					</label>
-					<input
-						id="file-upload"
-						type="file"
-						class = "hidden"
-						accept=".mdzip"
-						onchange={ctx.link().callback(move |e: Event| {
-							let input: HtmlInputElement = e.target_unchecked_into();
-							Self::upload_project(input.files())
-						})}
-					/>
-					<p class="text-amber300">{ "NOTE: This relies on the fact, that you have a .dll script configured" }</p>
-				</div>
-				if let Some(collection) = &self.current_collection {
-					<div>
-						<p class="text-2xl mt-2rem">{ "2. Make sure everything looks 👌" }</p>
-						<div class="mb-0.5rem gap-3 flex flex-row items-center">
-							<button
-								class="p-0.5rem btn-white"
-								onclick={ctx.link().callback(move |_: MouseEvent| {
-									Msg::ShowPrevTable
-								})}
-							>
-								{ "< Previous" }
-							</button>
-							<div> { self.currently_shown_table + 1 } { " / " } { collection.len() } </div>
-							<button
-								class="p-0.5rem btn-white"
-								onclick={ctx.link().callback(move |_: MouseEvent| {
-									Msg::ShowNextTable
-								})}
-							>
-								{ "Next >" }
-							</button>
-						</div>
-						{ Self::show_table(collection[self.currently_shown_table].clone()) }
-						<button class="display-block p-1rem  mt-1rem btn-emerald">{ "All good?" }</button>
-					</div>
-					<div>
-						<p class="text-2xl mt-2rem">{ "3. Copy & Paste" }</p>
-					</div>
+				{ self.show_step1(ctx) }
+				if self.current_collection.is_some() {
+					{ self.show_step2(ctx) }
+					if self.all_good_confirmed {
+						{ self.show_step3(ctx) }
+						if self.generated_sql.is_some() {
+							{ self.show_step4(ctx) }
+						}
+					}
 				}
 			</main>
 		}
@@ -186,10 +169,117 @@ impl Component for App {
 }
 
 impl App {
+	fn show_step1(&self, ctx: &Context<Self>) -> Html {
+		let prevent_default_cb = Callback::from(|event: DragEvent| {
+			event.prevent_default();
+		});
 
-	fn show_table(table: Rc<SQLTable>) -> Html {
-		html!{
-			<SQLTableColumnInfo table={table} />
+		html! {
+			<div>
+				<p class="text-2xl mt-2rem pb-1rem">
+					<span>{ "1. Upload " }</span>
+					<code class="bg-dark900 p-0.2rem rounded">{".mdzip"}</code>
+					<span>{ " project" }</span>
+				</p>
+				<label for="file-upload">
+					<div
+						class="flex flex-col rounded items-center p-3rem bg-dark800"
+						border="dotted dark100 0.2rem"
+						cursor="pointer"
+						ondrop={ctx.link().callback(|event: DragEvent| {
+							event.prevent_default();
+							let files = event.data_transfer().unwrap().files();
+							Self::upload_project(files)
+						})}
+						ondragover={&prevent_default_cb}
+						ondragenter={&prevent_default_cb}
+					>
+						<div class="i-mdi-file-upload-outline text-4rem"></div>
+					</div>
+				</label>
+				<input
+					id="file-upload"
+					type="file"
+					class = "hidden"
+					accept=".mdzip"
+					onchange={ctx.link().callback(move |e: Event| {
+						let input: HtmlInputElement = e.target_unchecked_into();
+						Self::upload_project(input.files())
+					})}
+				/>
+				<p class="text-amber300">{ "NOTE: This relies on the fact, that you have a .dll script configured" }</p>
+			</div>
+		}
+	}
+
+	fn show_step2(&self, ctx: &Context<Self>) -> Html {
+		let collection = self.current_collection.as_ref().unwrap();
+
+		html! {
+			<div>
+				<p class="text-2xl mt-2rem">{ "2. Make sure everything looks 👌" }</p>
+				<div class="mb-0.5rem gap-3 flex flex-row items-center">
+					<button
+						class="p-0.5rem btn-white"
+						onclick={ctx.link().callback(move |_: MouseEvent| { Msg::ShowPrevTable })}
+					>
+						{ "< Previous" }
+					</button>
+					<div> { self.currently_shown_table + 1 } { " / " } { collection.len() } </div>
+					<button
+						class="p-0.5rem btn-white"
+						onclick={ctx.link().callback(move |_: MouseEvent| { Msg::ShowNextTable })}
+					>
+						{ "Next >" }
+					</button>
+				</div>
+				<SQLTableColumnInfo
+					table={collection[self.currently_shown_table].clone()}
+					guessess={self.current_guessess[self.currently_shown_table].clone()}
+					onchange={ctx.link().callback(|(column_name, generator)| {
+						Msg::UpdateGenarator(column_name, generator)
+					})}
+				/>
+				<button
+					class="display-block p-1rem  mt-1rem btn-emerald"
+					onclick={ctx.link().callback(move |_: MouseEvent| { Msg::AllGoodConfirmation })}
+				>{ "All good?" }</button>
+			</div>
+		}
+	}
+
+	fn show_step3(&self, ctx: &Context<Self>) -> Html {
+		html! {
+			<div>
+				<p class="text-2xl mt-2rem">{ "3. Final settings" }</p>
+				<label for="gen-amount-input">
+					{ "Entries per table: " }
+				</label>
+				<input
+					id="gen-amount-input"
+					class="rounded items-center p-0.3rem bg-dark800 text-light100 w-5rem b-0"
+					value={DEFAULT_ROWS_PER_TABLE.to_string()}
+					type="number"
+				/>
+
+				<button
+					class="block mt-1rem p-1rem btn-emerald"
+				>
+					{ "Generate" }
+				</button>
+			</div>
+		}
+	}
+
+	fn show_step4(&self, ctx: &Context<Self>) -> Html {
+		let sql = self.generated_sql.as_ref().unwrap();
+		html! {
+			<div>
+				<p class="text-2xl mt-2rem">{ "4. Copy & Paste" }</p>
+				<code>
+					{ sql }
+				</code>
+			</div>
 		}
 	}
 
