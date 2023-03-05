@@ -110,7 +110,7 @@ fn is_umodel_snapshot_file(filename: &str) -> bool {
 fn parse_type_name(str: &str) -> Result<SQLTypeName> {
 	use SQLTypeName::*;
 	Ok(match str {
-		"decimal" => Decimal,
+		"decimal" | "dec" => Decimal,
 		"char" => Char,
 		"varchar" => Varchar,
 		"float" => Float,
