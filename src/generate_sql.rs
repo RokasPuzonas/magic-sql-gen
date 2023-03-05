@@ -125,11 +125,8 @@ pub fn generate_fake_entries(
 					.get(column.name.as_str())
 					.expect("Failed to get column guess");
 				for entry_idx in 0..(rows_per_table as usize) {
-					entries[entry_idx].push(generate_value(
-						&mut rng,
-						&value_guess,
-						&mut auto_increment_counter,
-					));
+					let value = generate_value(&mut rng, &value_guess, &mut auto_increment_counter);
+					entries[entry_idx].push(value);
 				}
 			}
 		}
@@ -140,17 +137,17 @@ pub fn generate_fake_entries(
 		let before_retain = entries_with_foreign_keys.len();
 
 		entries_with_foreign_keys.retain(|(table_idx, entry_idx)| {
-			for (column_idx, foreign_table_idx, foreign_column_idx) in
-				&all_foreign_columns[*table_idx]
+			for (column_idx, foreign_table_idx, foreign_column_idx) in &all_foreign_columns[*table_idx]
 			{
-				let available_values: Vec<&str>;
+				let mut available_values: Vec<&str>;
 
 				// If the foreign column, is also a foreign of the other table, ...
 				// Then we need to filter out available options which have not been filled in
-				if all_foreign_columns[*foreign_table_idx]
+				let is_foreign_column_also_foreign = all_foreign_columns[*foreign_table_idx]
 					.iter()
 					.find(|(idx, _, _)| idx == foreign_column_idx)
-					.is_some()
+					.is_some();
+				if is_foreign_column_also_foreign
 				{
 					available_values = all_entries[*foreign_table_idx]
 						.iter()
@@ -166,6 +163,14 @@ pub fn generate_fake_entries(
 						.map(|entry| entry[*foreign_column_idx].as_str())
 						.collect();
 				}
+
+				let used_values = all_entries[*table_idx].iter()
+					.enumerate()
+					.filter(|(entry_idx, _)| entries_with_foreign_keys_copy.contains(&(*table_idx, *entry_idx)))
+					.map(|(_, entry)| entry[*column_idx].as_str())
+					.collect::<HashSet<_>>();
+
+				available_values.retain(|value| !used_values.contains(value));
 
 				if let Some(chosen_value) = available_values.choose(&mut rng) {
 					all_entries[*table_idx][*entry_idx][*column_idx] = chosen_value.to_string();
