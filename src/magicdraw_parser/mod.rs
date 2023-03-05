@@ -1,17 +1,28 @@
-mod utils;
-mod uml_model_parser;
 mod ddl_parser;
 mod sql_types_parser;
-use serde::{Serialize, Deserialize};
+mod uml_model_parser;
+mod utils;
+use serde::{Deserialize, Serialize};
 
-use std::{io::{Read, Seek}, collections::HashSet, fmt::Display};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use lazy_regex::regex_captures;
+use std::{
+	collections::HashSet,
+	fmt::Display,
+	io::{Read, Seek},
+};
 use zip::ZipArchive;
 
 use crate::unwrap_opt_continue;
 
-use self::{uml_model_parser::{parse_uml_model, UMLModel, UMLClass, UMLModifier, UMLNullableModifier, UMLPrimaryKeyModifier, UMLTypeModifier, UMLForeignKeyModifier}, ddl_parser::parse_ddl_scripts, sql_types_parser::{parse_sql_types, SQLTypeName}};
+use self::{
+	ddl_parser::parse_ddl_scripts,
+	sql_types_parser::{parse_sql_types, SQLTypeName},
+	uml_model_parser::{
+		parse_uml_model, UMLClass, UMLForeignKeyModifier, UMLModel, UMLModifier,
+		UMLNullableModifier, UMLPrimaryKeyModifier, UMLTypeModifier,
+	},
+};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum SQLType {
@@ -29,15 +40,15 @@ pub enum SQLType {
 impl Display for SQLType {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-				SQLType::Int           => write!(f, "INT"),
-				SQLType::Decimal       => write!(f, "DECIMAL"),
-				SQLType::Date          => write!(f, "DATE"),
-				SQLType::Time          => write!(f, "TIME"),
-				SQLType::Datetime      => write!(f, "DATETIME"),
-				SQLType::Float         => write!(f, "FLOAT"),
-				SQLType::Bool          => write!(f, "BOOL"),
-				SQLType::Char(size)    => write!(f, "CHAR({})", size),
-				SQLType::Varchar(size) => write!(f, "VARCHAR({})", size),
+			SQLType::Int => write!(f, "INT"),
+			SQLType::Decimal => write!(f, "DECIMAL"),
+			SQLType::Date => write!(f, "DATE"),
+			SQLType::Time => write!(f, "TIME"),
+			SQLType::Datetime => write!(f, "DATETIME"),
+			SQLType::Float => write!(f, "FLOAT"),
+			SQLType::Bool => write!(f, "BOOL"),
+			SQLType::Char(size) => write!(f, "CHAR({})", size),
+			SQLType::Varchar(size) => write!(f, "VARCHAR({})", size),
 		}
 	}
 }
@@ -45,7 +56,7 @@ impl Display for SQLType {
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum SQLCheckConstraint {
 	OneOf(Vec<String>),
-	Freeform(String)
+	Freeform(String),
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
@@ -55,7 +66,7 @@ pub struct SQLColumn {
 	pub primary_key: bool,
 	pub nullable: bool,
 	pub foreign_key: Option<(String, String)>,
-	pub check_constraint: Option<SQLCheckConstraint>
+	pub check_constraint: Option<SQLCheckConstraint>,
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
@@ -66,7 +77,7 @@ pub struct SQLTable {
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct SQLTableCollection {
-	pub tables: Vec<SQLTable>
+	pub tables: Vec<SQLTable>,
 }
 
 fn find_class_by_id<'a>(models: &'a [UMLModel], id: &str) -> Option<&'a UMLClass> {
@@ -82,7 +93,11 @@ fn find_class_by_id<'a>(models: &'a [UMLModel], id: &str) -> Option<&'a UMLClass
 
 fn is_nullabe(modifiers: &[UMLModifier], property: &str) -> bool {
 	for modifier in modifiers {
-		if let UMLModifier::Nullable(UMLNullableModifier { property_id, nullable }) = modifier {
+		if let UMLModifier::Nullable(UMLNullableModifier {
+			property_id,
+			nullable,
+		}) = modifier
+		{
 			if property_id.eq(property) {
 				return *nullable;
 			}
@@ -95,7 +110,7 @@ fn is_primary_key(modifiers: &[UMLModifier], property: &str) -> bool {
 	for modifier in modifiers {
 		if let UMLModifier::PirmaryKey(UMLPrimaryKeyModifier { property_id }) = modifier {
 			if property_id.eq(property) {
-				return true
+				return true;
 			}
 		}
 	}
@@ -104,9 +119,13 @@ fn is_primary_key(modifiers: &[UMLModifier], property: &str) -> bool {
 
 fn get_type_modifier<'a>(modifiers: &'a [UMLModifier], property: &str) -> Option<&'a str> {
 	for modifier in modifiers {
-		if let UMLModifier::Type(UMLTypeModifier { property_id, modifier }) = modifier {
+		if let UMLModifier::Type(UMLTypeModifier {
+			property_id,
+			modifier,
+		}) = modifier
+		{
 			if property_id.eq(property) {
-				return Some(modifier)
+				return Some(modifier);
 			}
 		}
 	}
@@ -115,19 +134,27 @@ fn get_type_modifier<'a>(modifiers: &'a [UMLModifier], property: &str) -> Option
 
 fn get_foreign_key_constraint<'a>(modifiers: &'a [UMLModifier], from_id: &str) -> Option<&'a str> {
 	for modifier in modifiers {
-		if let UMLModifier::ForeignKey(UMLForeignKeyModifier { from_property_id, to_property_id }) = modifier {
+		if let UMLModifier::ForeignKey(UMLForeignKeyModifier {
+			from_property_id,
+			to_property_id,
+		}) = modifier
+		{
 			if from_property_id.eq(from_id) {
-				return Some(&to_property_id)
+				return Some(&to_property_id);
 			}
 		}
 	}
 	None
 }
 
-fn get_foreign_key(modifiers: &[UMLModifier], classess: &[&UMLClass], property: &str) -> Result<Option<(String, String)>> {
+fn get_foreign_key(
+	modifiers: &[UMLModifier],
+	classess: &[&UMLClass],
+	property: &str,
+) -> Result<Option<(String, String)>> {
 	let to_id = get_foreign_key_constraint(modifiers, property);
 	if to_id.is_none() {
-		return Ok(None)
+		return Ok(None);
 	}
 	let to_id = to_id.unwrap();
 
@@ -156,12 +183,14 @@ fn parse_check_constraint(str: &str) -> SQLCheckConstraint {
 		Some(SQLCheckConstraint::OneOf(variants))
 	}
 
-	try_parse_one_of(str)
-		.unwrap_or(SQLCheckConstraint::Freeform(str.to_string()))
+	try_parse_one_of(str).unwrap_or(SQLCheckConstraint::Freeform(str.to_string()))
 }
 
 // TODO: Refactor this function, less nesting would be good
-fn get_sql_check_constraint<'a>(models: &'a [UMLModel], property_name: &str) -> Option<SQLCheckConstraint> {
+fn get_sql_check_constraint<'a>(
+	models: &'a [UMLModel],
+	property_name: &str,
+) -> Option<SQLCheckConstraint> {
 	for model in models {
 		for package in &model.packages {
 			for class in &package.classess {
@@ -179,14 +208,18 @@ fn get_sql_check_constraint<'a>(models: &'a [UMLModel], property_name: &str) -> 
 	None
 }
 
-fn get_sql_type(modifiers: &[UMLModifier], type_name: SQLTypeName, property: &str) -> Result<SQLType> {
+fn get_sql_type(
+	modifiers: &[UMLModifier],
+	type_name: SQLTypeName,
+	property: &str,
+) -> Result<SQLType> {
 	Ok(match type_name {
-    SQLTypeName::Int => SQLType::Int,
-    SQLTypeName::Date => SQLType::Date,
-    SQLTypeName::Float => SQLType::Float,
-    SQLTypeName::Bool => SQLType::Bool,
-    SQLTypeName::Decimal => SQLType::Decimal,
-    SQLTypeName::Char => {
+		SQLTypeName::Int => SQLType::Int,
+		SQLTypeName::Date => SQLType::Date,
+		SQLTypeName::Float => SQLType::Float,
+		SQLTypeName::Bool => SQLType::Bool,
+		SQLTypeName::Decimal => SQLType::Decimal,
+		SQLTypeName::Char => {
 			if let Some(type_modifier) = get_type_modifier(modifiers, property) {
 				let (_, size) = regex_captures!(r#"^\((\d+)\)$"#, type_modifier)
 					.context("Type modifier doesn't match format")?;
@@ -196,8 +229,8 @@ fn get_sql_type(modifiers: &[UMLModifier], type_name: SQLTypeName, property: &st
 				// For now just pick a defautl arbitrarily
 				SQLType::Char(31)
 			}
-		},
-    SQLTypeName::Varchar => {
+		}
+		SQLTypeName::Varchar => {
 			if let Some(type_modifier) = get_type_modifier(modifiers, property) {
 				let (_, size) = regex_captures!(r#"^\((\d+)\)$"#, type_modifier)
 					.context("Type modifier doesn't match format")?;
@@ -207,12 +240,13 @@ fn get_sql_type(modifiers: &[UMLModifier], type_name: SQLTypeName, property: &st
 				// For now just pick a defautl arbitrarily
 				SQLType::Varchar(255)
 			}
-		},
+		}
 	})
 }
 
 fn get_used_types<'a>(models: &'a [UMLModel]) -> HashSet<&'a String> {
-	models.iter()
+	models
+		.iter()
 		.flat_map(|model| &model.packages)
 		.flat_map(|package| &package.classess)
 		.flat_map(|class| &class.properties)
@@ -232,26 +266,43 @@ pub fn parse_project<R: Read + Seek>(project_file: R) -> Result<Vec<SQLTableColl
 		for ddl_script in ddl_project.scripts {
 			let mut tables = vec![];
 
-			let model_properties = ddl_script.classess.iter()
-				.flat_map(|class| class.property_ids.iter().map(|prop| (&class.class_id, prop)))
+			let model_properties = ddl_script
+				.classess
+				.iter()
+				.flat_map(|class| {
+					class
+						.property_ids
+						.iter()
+						.map(|prop| (&class.class_id, prop))
+				})
 				.collect::<Vec<_>>();
 
 			let mut model_classess = vec![];
 			for ddl_class in &ddl_script.classess {
-				let model_class = find_class_by_id(&models, &ddl_class.class_id).context("UML class not found")?;
+				let model_class = find_class_by_id(&models, &ddl_class.class_id)
+					.context("UML class not found")?;
 				model_classess.push(model_class);
 			}
 
 			for (ddl_class, model_class) in ddl_script.classess.iter().zip(&model_classess) {
-				let name = model_class.name.clone().context("UML class name not found")?;
+				let name = model_class
+					.name
+					.clone()
+					.context("UML class name not found")?;
 
 				let mut columns = vec![];
 				for property_id in &ddl_class.property_ids {
-					let property = model_class.properties.iter().find(|p| p.id.eq(property_id)).context("Property not found")?;
+					let property = model_class
+						.properties
+						.iter()
+						.find(|p| p.id.eq(property_id))
+						.context("Property not found")?;
 					let prop_name = unwrap_opt_continue!(&property.name).clone();
 
 					let type_href = unwrap_opt_continue!(&property.type_href);
-					let type_name = sql_type_names.get(type_href).context("Proerty type name conversion not found")?;
+					let type_name = sql_type_names
+						.get(type_href)
+						.context("Proerty type name conversion not found")?;
 
 					let check_constraint = get_sql_check_constraint(&models, &prop_name);
 					let foreign_key = get_foreign_key(&modifiers, &model_classess, property_id)?;
@@ -266,10 +317,7 @@ pub fn parse_project<R: Read + Seek>(project_file: R) -> Result<Vec<SQLTableColl
 					})
 				}
 
-				tables.push(SQLTable {
-					name,
-					columns
-				})
+				tables.push(SQLTable { name, columns })
 			}
 			collections.push(SQLTableCollection { tables })
 		}

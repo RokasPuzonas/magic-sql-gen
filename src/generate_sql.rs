@@ -1,26 +1,40 @@
-use std::{rc::Rc, collections::{HashSet, HashMap}, cell::Ref};
+use std::{
+	cell::Ref,
+	collections::{HashMap, HashSet},
+	rc::Rc,
+};
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
+use chrono::{Days, Local, NaiveDateTime};
+use fake::{
+	faker::{
+		address::en::{CityName, StreetName},
+		company::en::BsNoun,
+		internet::en::{DomainSuffix, FreeEmail},
+		lorem::en::*,
+		name::en::{FirstName, LastName, Name},
+		phone_number::en::PhoneNumber,
+	},
+	Fake,
+};
 use gloo::console::console_dbg;
-use rand::{seq::SliceRandom, Rng, rngs::ThreadRng};
-use chrono::{Local, NaiveDateTime, Days};
-use fake::{faker::{lorem::en::*, name::en::{FirstName, LastName, Name}, phone_number::en::PhoneNumber, internet::en::{DomainSuffix, FreeEmail}, company::en::BsNoun, address::{en::{CityName, StreetName}}}, Fake};
+use rand::{rngs::ThreadRng, seq::SliceRandom, Rng};
 
-use crate::magicdraw_parser::{SQLTable, SQLColumn, SQLType, SQLCheckConstraint};
+use crate::magicdraw_parser::{SQLCheckConstraint, SQLColumn, SQLTable, SQLType};
 
 const INDENT: &str = "  ";
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SQLIntValueGuess {
 	Range(i32, i32),
-	AutoIncrement
+	AutoIncrement,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SQLTimeValueGuess {
 	Now,
 	Future,
-	Past
+	Past,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -58,10 +72,10 @@ pub enum SQLValueGuess {
 
 // TODO: Check primary key constraint
 pub fn generate_fake_entries(
-		tables: &[Rc<SQLTable>],
-		value_guessess: &Vec<Ref<HashMap<String, SQLValueGuess>>>,
-		rows_per_table: u32
-	) -> Result<String> {
+	tables: &[Rc<SQLTable>],
+	value_guessess: &Vec<Ref<HashMap<String, SQLValueGuess>>>,
+	rows_per_table: u32,
+) -> Result<String> {
 	let mut lines = vec![];
 
 	let mut rng = rand::thread_rng();
@@ -78,11 +92,13 @@ pub fn generate_fake_entries(
 		let mut foreign_columns = vec![];
 		for (i, column) in table.columns.iter().enumerate() {
 			if let Some((table_name, column_name)) = &column.foreign_key {
-				let (table_idx, table) = tables.iter()
+				let (table_idx, table) = tables
+					.iter()
 					.enumerate()
 					.find(|(_, table)| table.name.eq(table_name))
 					.expect("Foreign table not found");
-				let (column_idx, _) = table.columns
+				let (column_idx, _) = table
+					.columns
 					.iter()
 					.enumerate()
 					.find(|(_, column)| column.name.eq(column_name))
@@ -109,7 +125,11 @@ pub fn generate_fake_entries(
 					.get(column.name.as_str())
 					.expect("Failed to get column guess");
 				for entry_idx in 0..(rows_per_table as usize) {
-					entries[entry_idx].push(generate_value(&mut rng, &value_guess, &mut auto_increment_counter));
+					entries[entry_idx].push(generate_value(
+						&mut rng,
+						&value_guess,
+						&mut auto_increment_counter,
+					));
 				}
 			}
 		}
@@ -120,19 +140,29 @@ pub fn generate_fake_entries(
 		let before_retain = entries_with_foreign_keys.len();
 
 		entries_with_foreign_keys.retain(|(table_idx, entry_idx)| {
-			for (column_idx, foreign_table_idx, foreign_column_idx) in &all_foreign_columns[*table_idx] {
+			for (column_idx, foreign_table_idx, foreign_column_idx) in
+				&all_foreign_columns[*table_idx]
+			{
 				let available_values: Vec<&str>;
 
 				// If the foreign column, is also a foreign of the other table, ...
 				// Then we need to filter out available options which have not been filled in
-				if all_foreign_columns[*foreign_table_idx].iter().find(|(idx, _, _)| idx == foreign_column_idx).is_some() {
-					available_values = all_entries[*foreign_table_idx].iter()
+				if all_foreign_columns[*foreign_table_idx]
+					.iter()
+					.find(|(idx, _, _)| idx == foreign_column_idx)
+					.is_some()
+				{
+					available_values = all_entries[*foreign_table_idx]
+						.iter()
 						.enumerate()
-						.filter(|(i, _)| entries_with_foreign_keys_copy.contains(&(*foreign_table_idx, *i)))
+						.filter(|(i, _)| {
+							entries_with_foreign_keys_copy.contains(&(*foreign_table_idx, *i))
+						})
 						.map(|(_, entry)| entry[*foreign_column_idx].as_str())
 						.collect();
 				} else {
-					available_values = all_entries[*foreign_table_idx].iter()
+					available_values = all_entries[*foreign_table_idx]
+						.iter()
 						.map(|entry| entry[*foreign_column_idx].as_str())
 						.collect();
 				}
@@ -165,7 +195,8 @@ pub fn generate_fake_entries(
 		lines.push(format!("INSERT INTO {}", table.name));
 		lines.push(format!("{}({})", INDENT, column_names.join(", ")));
 		lines.push("VALUES".into());
-		let entries_str = entries.iter()
+		let entries_str = entries
+			.iter()
 			.map(|entry| format!("{}({})", INDENT, entry.join(", ")))
 			.collect::<Vec<_>>()
 			.join(",\n");
@@ -183,7 +214,7 @@ fn generate_time_value(rng: &mut ThreadRng, guess: &SQLTimeValueGuess) -> NaiveD
 		SQLTimeValueGuess::Future => {
 			let days = rng.gen_range(1..=30);
 			now.checked_add_days(Days::new(days)).unwrap()
-		},
+		}
 		SQLTimeValueGuess::Past => {
 			let days = rng.gen_range(7..=365);
 			now.checked_sub_days(Days::new(days)).unwrap()
@@ -191,93 +222,77 @@ fn generate_time_value(rng: &mut ThreadRng, guess: &SQLTimeValueGuess) -> NaiveD
 	}
 }
 
-fn generate_value(rng: &mut ThreadRng, guess: &SQLValueGuess, auto_increment_counter: &mut u32) -> String {
+fn generate_value(
+	rng: &mut ThreadRng,
+	guess: &SQLValueGuess,
+	auto_increment_counter: &mut u32,
+) -> String {
 	match guess {
-    SQLValueGuess::Int(int_guess) => {
-			match int_guess {
-				SQLIntValueGuess::Range(min, max) => {
-					rng.gen_range((*min)..=(*max)).to_string()
-				},
-				SQLIntValueGuess::AutoIncrement => {
-					let str = auto_increment_counter.to_string();
-					*auto_increment_counter += 1;
-					str
-				},
+		SQLValueGuess::Int(int_guess) => match int_guess {
+			SQLIntValueGuess::Range(min, max) => rng.gen_range((*min)..=(*max)).to_string(),
+			SQLIntValueGuess::AutoIncrement => {
+				let str = auto_increment_counter.to_string();
+				*auto_increment_counter += 1;
+				str
 			}
 		},
-    SQLValueGuess::Date(time_gues) => {
+		SQLValueGuess::Date(time_gues) => {
 			let datetime = generate_time_value(rng, &time_gues);
 			format!("'{}'", datetime.format("%Y-%m-%d"))
-		},
-    SQLValueGuess::Time(time_gues) => {
+		}
+		SQLValueGuess::Time(time_gues) => {
 			let datetime = generate_time_value(rng, &time_gues);
 			format!("'{}'", datetime.format("%H:%M:%S"))
-		},
-    SQLValueGuess::Datetime(time_gues) => {
+		}
+		SQLValueGuess::Datetime(time_gues) => {
 			let datetime = generate_time_value(rng, &time_gues);
 			format!("'{}'", datetime.format("%Y-%m-%d %H:%M:%S"))
+		}
+		SQLValueGuess::Bool(bool_guess) => match bool_guess {
+			SQLBoolValueGuess::True => "1".into(),
+			SQLBoolValueGuess::False => "0".into(),
+			SQLBoolValueGuess::Random => rng.gen_range(0..=1).to_string(),
 		},
-    SQLValueGuess::Bool(bool_guess) => {
-			match bool_guess {
-				SQLBoolValueGuess::True => "1".into(),
-				SQLBoolValueGuess::False => "0".into(),
-				SQLBoolValueGuess::Random => rng.gen_range(0..=1).to_string(),
-			}
-		},
-    SQLValueGuess::Float(min, max) => {
+		SQLValueGuess::Float(min, max) => {
 			let value = rng.gen_range((*min)..(*max));
 			((value * 100.0 as f32).round() / 100.0).to_string()
-		},
-    SQLValueGuess::String(max_size, string_guess) => {
+		}
+		SQLValueGuess::String(max_size, string_guess) => {
 			let mut str = match string_guess {
 				SQLStringValueGuess::LoremIpsum => {
-
 					let mut current_len = 0;
 					let mut text = vec![];
 					let words: Vec<String> = Words(3..10).fake_with_rng(rng);
 					for word in words {
 						current_len += word.len() + 1;
 						text.push(word);
-						if current_len > *max_size { break; }
+						if current_len > *max_size {
+							break;
+						}
 					}
 					text.join(" ").to_string()
-				},
-				SQLStringValueGuess::FirstName => {
-					FirstName().fake_with_rng(rng)
-				},
-				SQLStringValueGuess::LastName => {
-					LastName().fake_with_rng(rng)
-				},
-				SQLStringValueGuess::FullName => {
-					Name().fake_with_rng(rng)
-				},
-				SQLStringValueGuess::PhoneNumber => {
-					PhoneNumber().fake_with_rng(rng)
-				},
-				SQLStringValueGuess::CityName => {
-					CityName().fake_with_rng(rng)
-				},
-				SQLStringValueGuess::Address => {
-					StreetName().fake_with_rng(rng)
-				},
-				SQLStringValueGuess::Email => {
-					FreeEmail().fake_with_rng(rng)
-				},
+				}
+				SQLStringValueGuess::FirstName => FirstName().fake_with_rng(rng),
+				SQLStringValueGuess::LastName => LastName().fake_with_rng(rng),
+				SQLStringValueGuess::FullName => Name().fake_with_rng(rng),
+				SQLStringValueGuess::PhoneNumber => PhoneNumber().fake_with_rng(rng),
+				SQLStringValueGuess::CityName => CityName().fake_with_rng(rng),
+				SQLStringValueGuess::Address => StreetName().fake_with_rng(rng),
+				SQLStringValueGuess::Email => FreeEmail().fake_with_rng(rng),
 				SQLStringValueGuess::URL => {
 					let suffix: String = DomainSuffix().fake_with_rng(rng);
 					let noun: String = BsNoun().fake_with_rng(rng);
-					let noun: String = noun.to_lowercase()
+					let noun: String = noun
+						.to_lowercase()
 						.chars()
 						.map(|c| if c.is_whitespace() { '-' } else { c })
 						.collect();
 					format!("www.{}.{}", noun, suffix)
-				},
+				}
 				SQLStringValueGuess::RandomEnum(options) => {
 					options.choose(rng).unwrap().to_string()
-				},
-				SQLStringValueGuess::Empty => {
-					"".into()
 				}
+				SQLStringValueGuess::Empty => "".into(),
 			};
 
 			str.truncate(*max_size);
@@ -289,74 +304,70 @@ fn generate_value(rng: &mut ThreadRng, guess: &SQLValueGuess, auto_increment_cou
 fn generate_string_guess(column: &SQLColumn) -> SQLStringValueGuess {
 	if let Some(constraint) = &column.check_constraint {
 		if let SQLCheckConstraint::OneOf(options) = constraint {
-			return SQLStringValueGuess::RandomEnum(options.clone())
+			return SQLStringValueGuess::RandomEnum(options.clone());
 		} else {
-			return SQLStringValueGuess::LoremIpsum
+			return SQLStringValueGuess::LoremIpsum;
 		}
 	}
 
 	let name = column.name.to_lowercase();
 	if name.contains("first") && name.contains("name") {
-		 SQLStringValueGuess::FirstName
+		SQLStringValueGuess::FirstName
 	} else if (name.contains("last") && name.contains("name")) || name.contains("surname") {
-		 SQLStringValueGuess::LastName
+		SQLStringValueGuess::LastName
 	} else if name.contains("phone") && name.contains("number") {
-		 SQLStringValueGuess::PhoneNumber
+		SQLStringValueGuess::PhoneNumber
 	} else if name.contains("city") {
-		 SQLStringValueGuess::CityName
+		SQLStringValueGuess::CityName
 	} else if name.contains("address") {
-		 SQLStringValueGuess::Address
+		SQLStringValueGuess::Address
 	} else if name.contains("email") {
-		 SQLStringValueGuess::Email
+		SQLStringValueGuess::Email
 	} else if name.contains("homepage") || name.contains("website") || name.contains("url") {
-		 SQLStringValueGuess::URL
+		SQLStringValueGuess::URL
 	} else {
-		 SQLStringValueGuess::LoremIpsum
+		SQLStringValueGuess::LoremIpsum
 	}
 }
 
 pub fn generate_guess(column: &SQLColumn) -> SQLValueGuess {
 	match column.sql_type {
-    SQLType::Int => {
+		SQLType::Int => {
 			if column.primary_key {
 				SQLValueGuess::Int(SQLIntValueGuess::AutoIncrement)
 			} else {
 				SQLValueGuess::Int(SQLIntValueGuess::Range(0, 100))
 			}
-		},
-    SQLType::Float | SQLType::Decimal => {
-			SQLValueGuess::Float(0.0, 100.0)
-		},
-    SQLType::Date => {
+		}
+		SQLType::Float | SQLType::Decimal => SQLValueGuess::Float(0.0, 100.0),
+		SQLType::Date => {
 			let name = column.name.to_lowercase();
 			if name.contains("create") || name.contains("update") {
 				SQLValueGuess::Date(SQLTimeValueGuess::Past)
 			} else {
 				SQLValueGuess::Date(SQLTimeValueGuess::Now)
 			}
-		},
-    SQLType::Time => {
+		}
+		SQLType::Time => {
 			let name = column.name.to_lowercase();
 			if name.contains("create") || name.contains("update") {
 				SQLValueGuess::Time(SQLTimeValueGuess::Past)
 			} else {
 				SQLValueGuess::Time(SQLTimeValueGuess::Now)
 			}
-		},
-    SQLType::Datetime => {
+		}
+		SQLType::Datetime => {
 			let name = column.name.to_lowercase();
 			if name.contains("create") || name.contains("update") {
 				SQLValueGuess::Datetime(SQLTimeValueGuess::Past)
 			} else {
 				SQLValueGuess::Datetime(SQLTimeValueGuess::Now)
 			}
-		},
-    SQLType::Bool => {
-			SQLValueGuess::Bool(SQLBoolValueGuess::Random)
-		},
+		}
+		SQLType::Bool => SQLValueGuess::Bool(SQLBoolValueGuess::Random),
 		SQLType::Varchar(max_size) => {
 			SQLValueGuess::String(max_size as usize, generate_string_guess(column))
-		},
+		}
 		SQLType::Char(max_size) => {
 			SQLValueGuess::String(max_size as usize, generate_string_guess(column))
 		}
@@ -364,7 +375,9 @@ pub fn generate_guess(column: &SQLColumn) -> SQLValueGuess {
 }
 
 pub fn generate_table_guessess(table: &SQLTable) -> HashMap<String, SQLValueGuess> {
-	table.columns.iter()
+	table
+		.columns
+		.iter()
 		.filter(|column| column.foreign_key.is_none())
 		.map(|column| (column.name.clone(), generate_guess(column)))
 		.collect()

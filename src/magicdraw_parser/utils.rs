@@ -1,12 +1,12 @@
 use std::io::Read;
 
-use xml::{EventReader, reader::XmlEvent, name::OwnedName, attribute::OwnedAttribute};
 use anyhow::Result;
 use thiserror::Error;
+use xml::{attribute::OwnedAttribute, name::OwnedName, reader::XmlEvent, EventReader};
 
 pub struct MyEventReader<R: Read> {
 	depth: u32,
-	event_reader: EventReader<R>
+	event_reader: EventReader<R>,
 }
 
 impl<R: Read> MyEventReader<R> {
@@ -27,12 +27,12 @@ impl<R: Read> MyEventReader<R> {
 }
 
 impl<R: Read> From<EventReader<R>> for MyEventReader<R> {
-    fn from(event_reader: EventReader<R>) -> Self {
-        MyEventReader {
-					depth: 0,
-					event_reader
-				}
-    }
+	fn from(event_reader: EventReader<R>) -> Self {
+		MyEventReader {
+			depth: 0,
+			event_reader,
+		}
+	}
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -41,7 +41,7 @@ pub enum ParseProjectError {
 	AttributeNotFound(Option<String>, String),
 
 	#[error("Unexpected end of XML document")]
-	EndOfDocument
+	EndOfDocument,
 }
 
 fn format_name_from_parts(prefix: &Option<String>, local_name: &str) -> String {
@@ -60,17 +60,27 @@ pub fn check_name(name: &OwnedName, prefix: Option<&str>, local_name: &str) -> b
 	name.local_name.eq(local_name) && name.prefix_ref().eq(&prefix)
 }
 
-pub fn get_attribute<'a>(attributes: &'a [OwnedAttribute], prefix: Option<&str>, name: &str) -> Result<&'a str, ParseProjectError> {
-	Ok(attributes.iter()
+pub fn get_attribute<'a>(
+	attributes: &'a [OwnedAttribute],
+	prefix: Option<&str>,
+	name: &str,
+) -> Result<&'a str, ParseProjectError> {
+	Ok(attributes
+		.iter()
 		.find(|attr| check_name(&attr.name, prefix, name))
 		.map(|attr| &attr.value[..])
-		.ok_or_else(
-			|| ParseProjectError::AttributeNotFound(prefix.map(|s| s.to_owned()), name.to_owned()),
-		)?)
+		.ok_or_else(|| {
+			ParseProjectError::AttributeNotFound(prefix.map(|s| s.to_owned()), name.to_owned())
+		})?)
 }
 
 #[inline(always)]
-pub fn check_attribute(attributes: &[OwnedAttribute], prefix: Option<&str>, name: &str, expected_value: &str) -> bool {
+pub fn check_attribute(
+	attributes: &[OwnedAttribute],
+	prefix: Option<&str>,
+	name: &str,
+	expected_value: &str,
+) -> bool {
 	if let Ok(attr) = get_attribute(attributes, prefix, name) {
 		return attr.eq(expected_value);
 	}
@@ -84,10 +94,10 @@ pub fn get_element_characters<R: Read>(parser: &mut MyEventReader<R>) -> Result<
 		match parser.next()? {
 			XmlEvent::Characters(text) => {
 				parts.push(text);
-			},
+			}
 			XmlEvent::EndElement { name } => {
 				break;
-			},
+			}
 			_ => {}
 		}
 	}
@@ -95,23 +105,30 @@ pub fn get_element_characters<R: Read>(parser: &mut MyEventReader<R>) -> Result<
 	Ok(parts.join(" "))
 }
 
-pub fn parse_element<R: Read, F>(parser: &mut MyEventReader<R>, process_element: &mut F) -> Result<()>
-	where F: FnMut(&mut MyEventReader<R>, OwnedName, Vec<OwnedAttribute>) -> Result<()>
+pub fn parse_element<R: Read, F>(
+	parser: &mut MyEventReader<R>,
+	process_element: &mut F,
+) -> Result<()>
+where
+	F: FnMut(&mut MyEventReader<R>, OwnedName, Vec<OwnedAttribute>) -> Result<()>,
 {
-
 	let starting_depth = parser.depth();
 	loop {
 		match parser.next()? {
-			XmlEvent::StartElement { name, attributes, .. } => {
+			XmlEvent::StartElement {
+				name, attributes, ..
+			} => {
 				process_element(parser, name, attributes)?;
-				if parser.depth() == starting_depth-1 { break; }
+				if parser.depth() == starting_depth - 1 {
+					break;
+				}
 			}
 			XmlEvent::EndElement { name } => {
-				if parser.depth() == starting_depth-1 { break; }
-			},
-			XmlEvent::EndDocument => {
-				Err(ParseProjectError::EndOfDocument)?
-			},
+				if parser.depth() == starting_depth - 1 {
+					break;
+				}
+			}
+			XmlEvent::EndDocument => Err(ParseProjectError::EndOfDocument)?,
 			_ => {}
 		}
 	}
@@ -121,20 +138,24 @@ pub fn parse_element<R: Read, F>(parser: &mut MyEventReader<R>, process_element:
 
 #[macro_export]
 macro_rules! unwrap_err_continue {
-    ($res:expr) => {
-        match $res {
-            Ok(val) => val,
-            Err(e) => { continue; }
-        }
-    };
+	($res:expr) => {
+		match $res {
+			Ok(val) => val,
+			Err(e) => {
+				continue;
+			}
+		}
+	};
 }
 
 #[macro_export]
 macro_rules! unwrap_opt_continue {
-    ($res:expr) => {
-        match $res {
-            Some(val) => val,
-            None => { continue; }
-        }
-    };
+	($res:expr) => {
+		match $res {
+			Some(val) => val,
+			None => {
+				continue;
+			}
+		}
+	};
 }

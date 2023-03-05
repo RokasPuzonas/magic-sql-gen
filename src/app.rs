@@ -1,18 +1,18 @@
-use std::cell::RefCell;
-use std::io::Cursor;
-use std::collections::{HashMap, self};
-use std::rc::Rc;
-use gloo::console::{console_dbg, console};
+use gloo::console::{console, console_dbg};
 use gloo::file::callbacks::FileReader;
 use gloo::file::File;
 use gloo::storage::{LocalStorage, Storage};
+use std::cell::RefCell;
+use std::collections::{self, HashMap};
+use std::io::Cursor;
+use std::rc::Rc;
 use web_sys::{DragEvent, Event, FileList, HtmlInputElement, MouseEvent};
 use yew::html::TargetCast;
 use yew::{html, Callback, Component, Context, Html};
 
-use crate::generate_sql::{SQLValueGuess, generate_table_guessess, generate_fake_entries};
-use crate::magicdraw_parser::{parse_project, SQLTableCollection, SQLTable};
 use crate::components::sql_column_info::SQLTableColumnInfo;
+use crate::generate_sql::{generate_fake_entries, generate_table_guessess, SQLValueGuess};
+use crate::magicdraw_parser::{parse_project, SQLTable, SQLTableCollection};
 
 const COLLECTION_STORE_KEY: &str = "current_collection";
 const DEFAULT_ROWS_PER_TABLE: u32 = 20;
@@ -37,7 +37,7 @@ pub struct App {
 	currently_shown_table: usize,
 	all_good_confirmed: bool,
 	generated_sql: Option<String>,
-	rows_per_table: u32
+	rows_per_table: u32,
 }
 
 impl Component for App {
@@ -63,7 +63,7 @@ impl Component for App {
 			all_good_confirmed: true, // TODO: make this false, by default
 			generated_sql: None,
 			current_guessess,
-			rows_per_table: DEFAULT_ROWS_PER_TABLE
+			rows_per_table: DEFAULT_ROWS_PER_TABLE,
 		}
 	}
 
@@ -93,16 +93,13 @@ impl Component for App {
 
 					gloo::file::callbacks::read_as_bytes(&file, move |res| {
 						// TODO: show error message
-						link.send_message(Msg::Loaded(
-							file_name,
-							res.expect("failed to read file"),
-						))
+						link.send_message(Msg::Loaded(file_name, res.expect("failed to read file")))
 					})
 				};
 
 				self.active_readers.insert(file_name, task);
 				true
-			},
+			}
 			Msg::Noop => false,
 			Msg::UpdateCurrentProject(collection) => {
 				if let Some(collection) = collection {
@@ -115,38 +112,40 @@ impl Component for App {
 						let guess = generate_table_guessess(table);
 						self.current_guessess.push(Rc::new(RefCell::new(guess)));
 					}
-					self.current_collection = Some(collection.tables.into_iter().map(Rc::new).collect());
+					self.current_collection =
+						Some(collection.tables.into_iter().map(Rc::new).collect());
 				} else {
 					LocalStorage::delete(COLLECTION_STORE_KEY);
 					self.current_collection = None
 				}
 
 				true
-			},
+			}
 			Msg::ShowNextTable => {
 				if let Some(collection) = &self.current_collection {
-					self.currently_shown_table = (self.currently_shown_table + 1).min(collection.len()-1);
+					self.currently_shown_table =
+						(self.currently_shown_table + 1).min(collection.len() - 1);
 					return true;
 				}
 				false
-			},
+			}
 			Msg::ShowPrevTable => {
 				if self.currently_shown_table > 0 {
 					self.currently_shown_table = self.currently_shown_table - 1;
 					return true;
 				}
 				false
-			},
+			}
 			Msg::AllGoodConfirmation => {
 				self.all_good_confirmed = true;
 				true
-			},
+			}
 			Msg::UpdateGenarator(column, generator) => {
 				let mut guessess = self.current_guessess[self.currently_shown_table].borrow_mut();
 				let entry = guessess.get_mut(&column).unwrap();
 				*entry = generator;
 				true
-			},
+			}
 			Msg::GenerateSQL => {
 				let tables = self.current_collection.as_ref().unwrap();
 				let guessess = self.current_guessess.iter().map(|v| v.borrow()).collect();
@@ -157,7 +156,7 @@ impl Component for App {
 					self.generated_sql = None
 				}
 				true
-			},
+			}
 			Msg::UpdateRowsPerTable(rows_per_table) => {
 				self.rows_per_table = rows_per_table;
 				false

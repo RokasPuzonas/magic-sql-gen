@@ -1,31 +1,31 @@
 use std::io::{Read, Seek};
 
+use anyhow::{Context, Ok, Result};
 use xml::attribute::OwnedAttribute;
 use xml::name::OwnedName;
-use xml::{EventReader, reader::XmlEvent};
+use xml::{reader::XmlEvent, EventReader};
 use zip::ZipArchive;
-use anyhow::{Result, Context, Ok};
 
 use crate::magicdraw_parser::utils::get_attribute;
 
-use super::utils::{check_name, check_attribute, MyEventReader, parse_element};
+use super::utils::{check_attribute, check_name, parse_element, MyEventReader};
 
 #[derive(Debug)]
 pub struct DDLClass {
 	pub class_id: String,
-	pub property_ids: Vec<String>
+	pub property_ids: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct DDLScript {
 	pub script_id: String,
-	pub classess: Vec<DDLClass>
+	pub classess: Vec<DDLClass>,
 }
 
 #[derive(Debug)]
 pub struct DDLProject {
 	pub model_id: String,
-	pub scripts: Vec<DDLScript>
+	pub scripts: Vec<DDLScript>,
 }
 
 fn get_id_from_href(attrs: &[OwnedAttribute]) -> Option<String> {
@@ -34,16 +34,21 @@ fn get_id_from_href(attrs: &[OwnedAttribute]) -> Option<String> {
 	Some(parts.1.to_string())
 }
 
-fn parse_class<R: Read>(parser: &mut MyEventReader<R>, attrs: &[OwnedAttribute]) -> Result<DDLClass> {
+fn parse_class<R: Read>(
+	parser: &mut MyEventReader<R>,
+	attrs: &[OwnedAttribute],
+) -> Result<DDLClass> {
 	let mut property_ids = vec![];
 	let mut class_id = None;
 
 	fn is_model_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "modelElement") && check_attribute(&attributes, Some("xsi"), "type", "uml:Class")
+		check_name(name, None, "modelElement")
+			&& check_attribute(&attributes, Some("xsi"), "type", "uml:Class")
 	}
 
 	fn is_property_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "modelElement") && check_attribute(&attributes, Some("xsi"), "type", "uml:Property")
+		check_name(name, None, "modelElement")
+			&& check_attribute(&attributes, Some("xsi"), "type", "uml:Property")
 	}
 
 	parse_element(parser, &mut |p, name, attrs| {
@@ -57,20 +62,30 @@ fn parse_class<R: Read>(parser: &mut MyEventReader<R>, attrs: &[OwnedAttribute])
 
 	Ok(DDLClass {
 		class_id: class_id.context("Missing class id")?,
-		property_ids
+		property_ids,
 	})
 }
 
-fn parse_script<R: Read>(parser: &mut MyEventReader<R>, attrs: &[OwnedAttribute]) -> Result<DDLScript> {
+fn parse_script<R: Read>(
+	parser: &mut MyEventReader<R>,
+	attrs: &[OwnedAttribute],
+) -> Result<DDLScript> {
 	let mut classess = vec![];
 	let mut script_id = None;
 
 	fn is_model_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "modelElement") && check_attribute(&attributes, Some("xsi"), "type", "uml:Component")
+		check_name(name, None, "modelElement")
+			&& check_attribute(&attributes, Some("xsi"), "type", "uml:Component")
 	}
 
 	fn is_class_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "objects") && check_attribute(&attributes, Some("xsi"), "type", "md.ce.rt.objects:RTClassObject")
+		check_name(name, None, "objects")
+			&& check_attribute(
+				&attributes,
+				Some("xsi"),
+				"type",
+				"md.ce.rt.objects:RTClassObject",
+			)
 	}
 
 	parse_element(parser, &mut |p, name, attrs| {
@@ -84,20 +99,30 @@ fn parse_script<R: Read>(parser: &mut MyEventReader<R>, attrs: &[OwnedAttribute]
 
 	Ok(DDLScript {
 		script_id: script_id.context("Missing script id")?,
-		classess
+		classess,
 	})
 }
 
-fn parse_project<R: Read>(parser: &mut MyEventReader<R>, attrs: &[OwnedAttribute]) -> Result<DDLProject> {
+fn parse_project<R: Read>(
+	parser: &mut MyEventReader<R>,
+	attrs: &[OwnedAttribute],
+) -> Result<DDLProject> {
 	let mut scripts = vec![];
 	let mut model_id = None;
 
 	fn is_model_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "modelElement") && check_attribute(&attributes, Some("xsi"), "type", "uml:Model")
+		check_name(name, None, "modelElement")
+			&& check_attribute(&attributes, Some("xsi"), "type", "uml:Model")
 	}
 
 	fn is_component_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "objects") && check_attribute(&attributes, Some("xsi"), "type", "md.ce.rt.objects:RTComponent")
+		check_name(name, None, "objects")
+			&& check_attribute(
+				&attributes,
+				Some("xsi"),
+				"type",
+				"md.ce.rt.objects:RTComponent",
+			)
 	}
 
 	parse_element(parser, &mut |p, name, attrs| {
@@ -111,28 +136,39 @@ fn parse_project<R: Read>(parser: &mut MyEventReader<R>, attrs: &[OwnedAttribute
 
 	Ok(DDLProject {
 		model_id: model_id.context("Missing model id")?,
-		scripts
+		scripts,
 	})
 }
 
 pub fn parse_ddl_scripts<R: Read + Seek>(project: &mut ZipArchive<R>) -> Result<Vec<DDLProject>> {
 	let mut ddl_scripts = vec![];
 
-	let file = project.by_name("personal-com.nomagic.magicdraw.ce.dmn.personaldmncodeengineering")?;
+	let file =
+		project.by_name("personal-com.nomagic.magicdraw.ce.dmn.personaldmncodeengineering")?;
 	let mut parser: MyEventReader<_> = EventReader::new(file).into();
 
 	fn is_project_element(name: &OwnedName, attributes: &[OwnedAttribute]) -> bool {
-		check_name(name, None, "contents") && check_attribute(&attributes, Some("xsi"), "type", "md.ce.ddl.rt.objects:DDLProjectObject")
+		check_name(name, None, "contents")
+			&& check_attribute(
+				&attributes,
+				Some("xsi"),
+				"type",
+				"md.ce.ddl.rt.objects:DDLProjectObject",
+			)
 	}
 
 	loop {
 		match parser.next()? {
-			XmlEvent::StartElement { name, attributes, .. } => {
+			XmlEvent::StartElement {
+				name, attributes, ..
+			} => {
 				if is_project_element(&name, &attributes) {
 					ddl_scripts.push(parse_project(&mut parser, &attributes)?);
 				}
-			},
-			XmlEvent::EndDocument => { break; },
+			}
+			XmlEvent::EndDocument => {
+				break;
+			}
 			_ => {}
 		}
 	}
