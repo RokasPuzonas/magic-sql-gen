@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::io::Cursor;
 use std::collections::{HashMap, self};
 use std::rc::Rc;
-use gloo::console::console_dbg;
+use gloo::console::{console_dbg, console};
 use gloo::file::callbacks::FileReader;
 use gloo::file::File;
 use gloo::storage::{LocalStorage, Storage};
@@ -10,7 +10,7 @@ use web_sys::{DragEvent, Event, FileList, HtmlInputElement, MouseEvent};
 use yew::html::TargetCast;
 use yew::{html, Callback, Component, Context, Html};
 
-use crate::generate_sql::{SQLValueGuess, generate_table_guessess};
+use crate::generate_sql::{SQLValueGuess, generate_table_guessess, generate_fake_entries};
 use crate::magicdraw_parser::{parse_project, SQLTableCollection, SQLTable};
 use crate::components::sql_column_info::SQLTableColumnInfo;
 
@@ -27,6 +27,7 @@ pub enum Msg {
 	ShowPrevTable,
 	AllGoodConfirmation,
 	GenerateSQL,
+	UpdateRowsPerTable(u32),
 }
 
 pub struct App {
@@ -35,7 +36,8 @@ pub struct App {
 	current_guessess: Vec<Rc<RefCell<HashMap<String, SQLValueGuess>>>>,
 	currently_shown_table: usize,
 	all_good_confirmed: bool,
-	generated_sql: Option<String>
+	generated_sql: Option<String>,
+	rows_per_table: u32
 }
 
 impl Component for App {
@@ -60,7 +62,8 @@ impl Component for App {
 			currently_shown_table: 0,
 			all_good_confirmed: true, // TODO: make this false, by default
 			generated_sql: None,
-			current_guessess
+			current_guessess,
+			rows_per_table: DEFAULT_ROWS_PER_TABLE
 		}
 	}
 
@@ -75,6 +78,7 @@ impl Component for App {
 						let msg = Self::update_current_collection(Some(collections.remove(0)));
 						ctx.link().send_message(msg);
 					}
+					// TODO: show error message
 				}
 
 				self.active_readers.remove(&file_name);
@@ -88,6 +92,7 @@ impl Component for App {
 					let file_name = file_name.clone();
 
 					gloo::file::callbacks::read_as_bytes(&file, move |res| {
+						// TODO: show error message
 						link.send_message(Msg::Loaded(
 							file_name,
 							res.expect("failed to read file"),
@@ -137,15 +142,26 @@ impl Component for App {
 				true
 			},
 			Msg::UpdateGenarator(column, generator) => {
-				console_dbg!(column, generator);
 				let mut guessess = self.current_guessess[self.currently_shown_table].borrow_mut();
 				let entry = guessess.get_mut(&column).unwrap();
 				*entry = generator;
 				true
 			},
 			Msg::GenerateSQL => {
-				false
+				let tables = self.current_collection.as_ref().unwrap();
+				let guessess = self.current_guessess.iter().map(|v| v.borrow()).collect();
+				// TODO: show error message
+				if let Ok(result) = generate_fake_entries(tables, &guessess, self.rows_per_table) {
+					self.generated_sql = Some(result)
+				} else {
+					self.generated_sql = None
+				}
+				true
 			},
+			Msg::UpdateRowsPerTable(rows_per_table) => {
+				self.rows_per_table = rows_per_table;
+				false
+			}
 		}
 	}
 
@@ -249,6 +265,12 @@ impl App {
 	}
 
 	fn show_step3(&self, ctx: &Context<Self>) -> Html {
+		let on_rows_changed = ctx.link().callback(|e: Event| {
+			let value_str = e.target_unchecked_into::<HtmlInputElement>().value();
+			let value = value_str.parse().unwrap_or(DEFAULT_ROWS_PER_TABLE);
+			Msg::UpdateRowsPerTable(value)
+		});
+
 		html! {
 			<div>
 				<p class="text-2xl mt-2rem">{ "3. Final settings" }</p>
@@ -258,12 +280,14 @@ impl App {
 				<input
 					id="gen-amount-input"
 					class="rounded items-center p-0.3rem bg-dark800 text-light100 w-5rem b-0"
-					value={DEFAULT_ROWS_PER_TABLE.to_string()}
+					value={self.rows_per_table.to_string()}
 					type="number"
+					onchange={on_rows_changed}
 				/>
 
 				<button
 					class="block mt-1rem p-1rem btn-emerald"
+					onclick={ctx.link().callback(|_: MouseEvent| { Msg::GenerateSQL })}
 				>
 					{ "Generate" }
 				</button>
@@ -276,9 +300,9 @@ impl App {
 		html! {
 			<div>
 				<p class="text-2xl mt-2rem">{ "4. Copy & Paste" }</p>
-				<code>
+				<pre class="bg-dark900 p-0.5rem rounded">
 					{ sql }
-				</code>
+				</pre>
 			</div>
 		}
 	}

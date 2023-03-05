@@ -1,6 +1,5 @@
 use std::{collections::HashMap, str::FromStr};
 
-use gloo::console::console_dbg;
 use yew::{Html, html, Callback, TargetCast, AttrValue};
 use web_sys::{Event, HtmlInputElement};
 

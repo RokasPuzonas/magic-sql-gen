@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 use app::App;
 
 mod magicdraw_parser;
@@ -10,10 +12,7 @@ mod generate_sql;
 // TODO: Fix double rebuilding when on "trunk server". uno css triggers second build.
 // TODO: Add simple versioning in frontend for data
 
-fn main() {
-	// let f = File::open("example.mdzip").unwrap();
-	// let collections = parse_project(f)?;
-	// dbg!(collections);
-
+fn main() -> Result<()> {
 	yew::Renderer::<App>::new().render();
+	Ok(())
 }

@@ -1,6 +1,7 @@
-use std::{rc::Rc, collections::{HashSet, HashMap}};
+use std::{rc::Rc, collections::{HashSet, HashMap}, cell::Ref};
 
 use anyhow::{Result, bail};
+use gloo::console::console_dbg;
 use rand::{seq::SliceRandom, Rng, rngs::ThreadRng};
 use chrono::{Local, NaiveDateTime, Days};
 use fake::{faker::{lorem::en::*, name::en::{FirstName, LastName, Name}, phone_number::en::PhoneNumber, internet::en::{DomainSuffix, FreeEmail}, company::en::BsNoun, address::{en::{CityName, StreetName}}}, Fake};
@@ -58,7 +59,7 @@ pub enum SQLValueGuess {
 // TODO: Check primary key constraint
 pub fn generate_fake_entries(
 		tables: &[Rc<SQLTable>],
-		value_guessess: &Vec<HashMap<&str, SQLValueGuess>>,
+		value_guessess: &Vec<Ref<HashMap<String, SQLValueGuess>>>,
 		rows_per_table: u32
 	) -> Result<String> {
 	let mut lines = vec![];
@@ -97,13 +98,17 @@ pub fn generate_fake_entries(
 		let entries = &mut all_entries[table_idx];
 
 		for column in &table.columns {
-			let mut auto_increment_counter = 0;
-			let value_guess = value_guessess[table_idx].get(column.name.as_str()).expect("Failed to get column guess");
-			for entry_idx in 0..(rows_per_table as usize) {
-				if let Some(_) = &column.foreign_key {
+			if column.foreign_key.is_some() {
+				for entry_idx in 0..(rows_per_table as usize) {
 					entries_with_foreign_keys.insert((table_idx, entry_idx));
 					entries[entry_idx].push("".into());
-				} else {
+				}
+			} else {
+				let mut auto_increment_counter = 0;
+				let value_guess = value_guessess[table_idx]
+					.get(column.name.as_str())
+					.expect("Failed to get column guess");
+				for entry_idx in 0..(rows_per_table as usize) {
 					entries[entry_idx].push(generate_value(&mut rng, &value_guess, &mut auto_increment_counter));
 				}
 			}
