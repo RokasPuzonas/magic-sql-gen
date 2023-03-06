@@ -13,7 +13,7 @@ use super::utils::{check_attribute, check_name, get_attribute, parse_element, My
 
 #[derive(Debug)]
 struct UsedPackage {
-	share_point_id: String,
+	share_point_ids: Vec<String>,
 	name: String,
 	needed_types: Vec<String>,
 }
@@ -23,6 +23,8 @@ pub enum SQLTypeName {
 	Int,
 	Decimal,
 	Date,
+	Datetime,
+	Time,
 	Float,
 	Bool,
 	Char,
@@ -39,22 +41,26 @@ fn parse_used_package<R: Read>(
 	attrs: &[OwnedAttribute],
 	needed_types: &[&str],
 ) -> Result<UsedPackage> {
-	let mut share_point_id = None;
+	let mut share_point_ids = vec![];
 	let project_uri = get_attribute(&attrs, None, "usedProjectURI")?;
 	let name = project_uri.split("/").last().unwrap();
 
 	parse_element(parser, &mut |p, name, attrs| {
-		if share_point_id.is_none() && check_name(&name, None, "mountPoints") {
-			share_point_id = get_attribute(&attrs, None, "sharePointID")
-				.ok()
-				.map(str::to_string);
+		if check_name(&name, None, "mountPoints") {
+			if let Ok(mount_id) = get_attribute(&attrs, None, "sharePointID").map(str::to_string) {
+				share_point_ids.push(mount_id);
+			}
 		}
 		Ok(())
 	})?;
 
+	if share_point_ids.is_empty() {
+		bail!("Share point mount ids not found")
+	}
+
 	Ok(UsedPackage {
 		name: name.to_string(),
-		share_point_id: share_point_id.context("Share point id not found")?,
+		share_point_ids,
 		needed_types: needed_types.iter().map(|s| s.to_string()).collect(),
 	})
 }
@@ -109,14 +115,16 @@ fn is_umodel_snapshot_file(filename: &str) -> bool {
 
 fn parse_type_name(str: &str) -> Result<SQLTypeName> {
 	use SQLTypeName::*;
-	Ok(match str {
+	Ok(match &str.to_lowercase()[..] {
 		"decimal" | "dec" => Decimal,
 		"char" => Char,
-		"varchar" => Varchar,
-		"float" => Float,
-		"Integer" | "integer" | "int" => Int,
+		"varchar" | "string" => Varchar,
+		"float" | "double precision" => Float, // TODO: Cheecky double precision -> float
+		"integer" | "int" => Int,
 		"date" => Date,
-		"Boolean" => Bool,
+		"datetime" => Datetime,
+		"time" => Time,
+		"boolean" => Bool,
 		_ => bail!("Unknown SQL type: '{}'", str),
 	})
 }
@@ -161,8 +169,9 @@ fn parse_primitive_types<R: Read>(
 			} => {
 				if check_name(&name, Some("uml"), "Package") {
 					if let Some(id) = get_attribute(&attributes, None, "ID").ok() {
+						let id = id.to_string();
 						if let Some(package) =
-							used_packages.iter().find(|p| p.share_point_id.eq(id))
+							used_packages.iter().find(|p| p.share_point_ids.contains(&id))
 						{
 							let package_types = parse_types_package(&mut parser)?
 								.into_iter()

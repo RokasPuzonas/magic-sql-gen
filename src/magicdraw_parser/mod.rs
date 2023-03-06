@@ -216,6 +216,8 @@ fn get_sql_type(
 	Ok(match type_name {
 		SQLTypeName::Int => SQLType::Int,
 		SQLTypeName::Date => SQLType::Date,
+		SQLTypeName::Datetime => SQLType::Datetime,
+		SQLTypeName::Time => SQLType::Time,
 		SQLTypeName::Float => SQLType::Float,
 		SQLTypeName::Bool => SQLType::Bool,
 		SQLTypeName::Decimal => SQLType::Decimal,
@@ -266,17 +268,6 @@ pub fn parse_project<R: Read + Seek>(project_file: R) -> Result<Vec<SQLTableColl
 		for ddl_script in ddl_project.scripts {
 			let mut tables = vec![];
 
-			let model_properties = ddl_script
-				.classess
-				.iter()
-				.flat_map(|class| {
-					class
-						.property_ids
-						.iter()
-						.map(|prop| (&class.class_id, prop))
-				})
-				.collect::<Vec<_>>();
-
 			let mut model_classess = vec![];
 			for ddl_class in &ddl_script.classess {
 				let model_class = find_class_by_id(&models, &ddl_class.class_id)
@@ -302,7 +293,7 @@ pub fn parse_project<R: Read + Seek>(project_file: R) -> Result<Vec<SQLTableColl
 					let type_href = unwrap_opt_continue!(&property.type_href);
 					let type_name = sql_type_names
 						.get(type_href)
-						.context("Proerty type name conversion not found")?;
+						.context("Property type name conversion not found")?;
 
 					let check_constraint = get_sql_check_constraint(&models, &prop_name);
 					let foreign_key = get_foreign_key(&modifiers, &model_classess, property_id)?;

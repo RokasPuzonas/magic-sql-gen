@@ -147,7 +147,7 @@ fn parse_constraint<R: Read>(
 		if let Some((prop_name, check_body)) = body.unwrap().split_once(" in ") {
 			return Ok(Some(UMLConstraint {
 				id,
-				class_id: Some(constrainted_element_id.context("Missing class id")?),
+				class_id: Some(constrainted_element_id.context("Missing constraint class id")?),
 				body: Some(format!("in {}", check_body)),
 				property_id: None,
 				property_name: Some(prop_name.into()),
@@ -155,9 +155,13 @@ fn parse_constraint<R: Read>(
 		}
 	}
 
+	if constrainted_element_id.is_none() {
+		return Ok(None);
+	}
+
 	return Ok(Some(UMLConstraint {
 		id,
-		property_id: Some(constrainted_element_id.context("Missing property id")?),
+		property_id: Some(constrainted_element_id.unwrap()),
 		body: None,
 		class_id: None,
 		property_name: None,

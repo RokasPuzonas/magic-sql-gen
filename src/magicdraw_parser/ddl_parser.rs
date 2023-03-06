@@ -61,7 +61,7 @@ fn parse_class<R: Read>(
 	})?;
 
 	Ok(DDLClass {
-		class_id: class_id.context("Missing class id")?,
+		class_id: class_id.context("Missing dll class id")?,
 		property_ids,
 	})
 }
